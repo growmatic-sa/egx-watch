@@ -116,7 +116,8 @@ ul.pts{margin:0;padding-inline-start:18px;font-size:13px;line-height:1.8}
 .banner{background:var(--surface-2);border:1px solid var(--line);border-radius:10px;
   padding:10px 12px;font-size:12.5px;color:var(--dim);margin-top:12px;line-height:1.7}
 </style>
-</head>\n<body>\n
+</head>
+<body>
 
 <div dir="rtl">
 <div class="wrap">
@@ -149,7 +150,10 @@ const NAMES = {
 };
 const DEFAULT = ['COMI','HRHO','TMGH','SWDY','ETEL','ABUK','EFIH','FWRY','ESRS','MASR','ORAS','SKPC'];
 let SYMS = DEFAULT.slice();
-try { const s = localStorage.getItem('egx.watch'); if (s) SYMS = JSON.parse(s); } catch(e){}
+try {
+  const s = JSON.parse(localStorage.getItem('egx.watch') || 'null');
+  if (Array.isArray(s) && s.length && s.every(t => typeof t === 'string' && /^[A-Z0-9]+$/.test(t))) SYMS = [...new Set(s)];
+} catch(e){}
 
 const $ = id => document.getElementById(id);
 const fmt = (n,d=2) => n==null||!isFinite(n) ? '—' : Number(n).toLocaleString('en-US',{minimumFractionDigits:d,maximumFractionDigits:d});
@@ -289,37 +293,57 @@ function sheetHTML(a){
 }
 
 /* ---------- تحميل ---------- */
-let DATA=[];
+let DATA=[], loading=false, completed=new Set();
 async function one(tk){
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000);
   try{
-    const r=await fetch(`${WORKER}/${tk}.CA?range=1y&interval=1d&t=${Date.now()}`);
+    const r=await fetch(`${WORKER}/${tk}.CA?range=1y&interval=1d`, {signal:controller.signal});
     if(!r.ok) return null;
     return analyse(await r.json(), tk);
   }catch(e){ return null; }
+  finally { clearTimeout(timeout); }
 }
 async function load(){
+  if (loading) return;
+  loading=true;
+  completed=new Set();
+  DATA=[];
+  $('reload').disabled=true;
+  try {
   paintStatus();
   $('list').innerHTML = SYMS.map(()=>'<div class="skel"></div>').join('');
   $('foot').textContent='';
   const out=[];
   for(let i=0;i<SYMS.length;i+=3){
     const part=await Promise.all(SYMS.slice(i,i+3).map(one));
+    SYMS.slice(i,i+3).forEach(t => completed.add(t));
     part.forEach(p=>{ if(p) out.push(p); });
     DATA=out.slice();
     render();
   }
-  const t=new Date(Date.now()+3*3600000).toISOString().slice(11,16);
+  const t=new Intl.DateTimeFormat('en-GB',{timeZone:'Africa/Cairo',hour:'2-digit',minute:'2-digit'}).format(new Date());
   $('stamp').textContent = `آخر تحديث ${t} بتوقيت القاهرة · ${DATA.length} من ${SYMS.length} سهم`;
   if (typeof checkAlerts === 'function') checkAlerts(DATA);
   const srcs=[...new Set(DATA.map(d=>d.src))];
-  $('foot').textContent = srcs.some(s=>s.includes('مباشر'))
+  $('foot').textContent = !DATA.length
+    ? 'تعذر الاتصال بمصدر الأسعار. تحقق من الاتصال وإعدادات CORS على خادم البيانات، ثم أعد المحاولة.'
+    : srcs.some(s=>s.includes('مباشر'))
     ? 'الأسعار من مباشر بتأخير 15 دقيقة أثناء الجلسة، والتاريخ من ياهو. تحليل آلي وليس نصيحة استثمارية.'
     : 'تعذر جلب السعر اللحظي — البيانات المعروضة هي آخر إغلاق متاح. تحليل آلي وليس نصيحة استثمارية.';
+  } finally {
+    loading=false;
+    $('reload').disabled=false;
+    render();
+  }
 }
 function render(){
-  const order=SYMS.map(t=>DATA.find(d=>d.tk===t)).filter(Boolean);
-  $('list').innerHTML = order.map(rowHTML).join('')
-    + SYMS.slice(order.length).map(()=>'<div class="skel"></div>').join('');
+  $('list').innerHTML = SYMS.map(t => {
+    const item=DATA.find(d=>d.tk===t);
+    if (item) return rowHTML(item);
+    if (loading && !completed.has(t)) return '<div class="skel"></div>';
+    return `<div class="banner"><b dir="ltr">${t}</b> · تعذر تحميل بيانات السهم</div>`;
+  }).join('');
 }
 
 $('list').addEventListener('click',e=>{
@@ -412,4 +436,5 @@ if ('serviceWorker' in navigator) {
   }
 })();
 </script>
-\n</body>\n</html>\n
+</body>
+</html>

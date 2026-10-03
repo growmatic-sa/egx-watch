@@ -1,5 +1,5 @@
 // خدمة التخزين المؤقت — الصفحة تفتح حتى من غير نت، والأسعار دايماً من الشبكة
-const CACHE = 'egx-v1';
+const CACHE = 'egx-watch-v2';
 const SHELL = ['./', './index.html', './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png'];
 
 self.addEventListener('install', e => {
@@ -8,7 +8,7 @@ self.addEventListener('install', e => {
 
 self.addEventListener('activate', e => {
   e.waitUntil(
-    caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE).map(k => caches.delete(k))))
+    caches.keys().then(ks => Promise.all(ks.filter(k => (k === 'egx-v1' || k.startsWith('egx-watch-')) && k !== CACHE).map(k => caches.delete(k))))
       .then(() => self.clients.claim())
   );
 });
